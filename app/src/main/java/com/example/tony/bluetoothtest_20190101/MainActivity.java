@@ -1,5 +1,7 @@
 package com.example.tony.bluetoothtest_20190101;
 
+import android.support.v4.app.ActivityCompat;
+import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
@@ -7,6 +9,7 @@ import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
@@ -17,9 +20,15 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
+import android.support.v4.content.ContextCompat;
 
 public class MainActivity extends AppCompatActivity {
     private final static int REQUEST_ENABLE_BT = 1;
+    private interface BTSearch{
+        public static final int START = 0;
+        public static final int FINISHEND=1;
+        public static final int END = 2;
+    };
     private EditText ed_Msg ;
     private Button btn_Send;
     private Button btn_BT_ON;
@@ -30,7 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private ArrayAdapter<String> BTAd_Array;
 
     ProgressDialog progressdialog;
-    Handler  hd2;
+    Handler  BT_Handler;
 
 
     @Override
@@ -50,11 +59,37 @@ public class MainActivity extends AppCompatActivity {
         btn_Search = (Button)findViewById(R.id.btn_Search);
 
         //Bluetooth
+        if (ContextCompat.checkSelfPermission(MainActivity.this,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, REQUEST_ENABLE_BT);
+        }
         BTAd = BluetoothAdapter.getDefaultAdapter();
         BTAd_Array = new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1);
 
 
         //set event
+        BT_Handler =new Handler(){
+            @Override
+            public void handleMessage(Message msg){
+                switch (msg.what){
+                    case BTSearch.START:
+                        progressdialog =ProgressDialog.show(MainActivity.this,"","Searching...",true,false);
+
+                        BT_Handler.sendEmptyMessageDelayed(BTSearch.FINISHEND,30000);
+                        break;
+                    case BTSearch.FINISHEND:
+                        BTAd.cancelDiscovery();
+                        progressdialog.dismiss();
+                        CommonTool.ToastAlert(MainActivity.this,"結束搜尋...");
+                        BT_Handler.sendEmptyMessageDelayed(BTSearch.END,100);
+                        break;
+                    case BTSearch.END:
+                        createAlertListView();
+                        break;
+                }
+
+            }
+        };
         btn_BT_ON.setOnClickListener( new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -72,55 +107,47 @@ public class MainActivity extends AppCompatActivity {
         btn_Shw_Paired.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                /*final String[] dinner = {"腿庫","雞蛋糕","沙威瑪","澳美客","麵線","麵疙瘩"};
-                AlertDialog.Builder dialog_list = new AlertDialog.Builder(MainActivity.this);
-                dialog_list.setTitle("利用List呈現");
-                dialog_list.setCancelable(false);
-                dialog_list.setItems(dinner, new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-
-                    }
-                });
-                dialog_list.show();*/
-
-
-
-
-                hd2 =new Handler(){
-                    @Override
-                    public void handleMessage(Message msg){
-
-                        if(msg.what == 1 ){
-                            progressdialog.dismiss();
-                        }else if(msg.what == 0) {
-                            progressdialog =ProgressDialog.show(MainActivity.this,"","Loading...",true,false);
-
-                            hd2.sendEmptyMessageDelayed(1,10000);
-                        }
-                    }
-                };
-                hd2.sendEmptyMessage(0);
+                getPairedDevices();
+                createAlertListView();
             }
         });
+
+        //按下搜尋鈕
         btn_Search.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
+                //支不支援藍芽
                 if(BTAd == null){
                     CommonTool.ToastAlert(MainActivity.this,"此裝置不支援藍芽");
                 }
                 else {
+                    //再看有沒有打開藍芽
                     if(BTAd.isEnabled()){
+                        //避免重複開啟搜尋，判斷是否已經開始搜尋
                         if(BTAd.isDiscovering()){
 
                         }
                         else {
+                            /*尚未搜尋，
+                                1.清空裝置List
+                                2.搜索藍芽
+                                3.開始計時
+                                4.註冊BroadcastReceiver
+                             */
+                            CommonTool.ToastAlert(MainActivity.this,"開始尋找");
                             BTAd_Array.clear();
                             BTAd.startDiscovery();
-                            CommonTool.ToastAlert(MainActivity.this,"開始尋找");
+
+
+
                             IntentFilter filter;
-                            filter = new IntentFilter(BluetoothDevice.ACTION_FOUND);
+                            filter = new IntentFilter();
+                            filter.addAction(BluetoothDevice.ACTION_FOUND);
+                            filter.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED);
+                            filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_STARTED);
+                            filter.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED);
                             registerReceiver(BTReceiver,filter);
+                            BT_Handler.sendEmptyMessage(BTSearch.START);
                         }
                     }
                     else {
@@ -132,15 +159,34 @@ public class MainActivity extends AppCompatActivity {
             }
         });
     }
-
+    //接收藍芽回傳廣播
     final BroadcastReceiver BTReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context context, Intent intent) {
+            //判斷是否為藍芽回傳的廣播
             String action = intent.getAction();
-            if(BluetoothDevice.ACTION_FOUND.equals(action)){
-                BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
 
-                BTAd_Array.add(device.getName() +"\n"+device.getAddress());
+            switch (action) {
+                case BluetoothDevice.ACTION_FOUND:
+                    //取得搜尋到的裝置訊息
+                    BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    BTAd_Array.add(device.getName() +"\n"+device.getAddress());
+                    break;
+                case BluetoothDevice.ACTION_BOND_STATE_CHANGED:
+                    CommonTool.ToastAlert(MainActivity.this,action);
+                    break;
+                case BluetoothAdapter.ACTION_DISCOVERY_STARTED:
+                    CommonTool.ToastAlert(MainActivity.this,action);
+                    break;
+                case BluetoothAdapter.ACTION_DISCOVERY_FINISHED:
+                    CommonTool.ToastAlert(MainActivity.this,action);
+                    break;
+                default:
+                    CommonTool.ToastAlert(MainActivity.this,action);
+                    break;
+            }
+            if(BluetoothDevice.ACTION_FOUND.equals(action)){
+
             }
         }
     };
@@ -157,6 +203,35 @@ public class MainActivity extends AppCompatActivity {
                     CommonTool.ToastAlert(MainActivity.this,"BT Open failed");
                     break;
             }
+
+    }
+    private void getPairedDevices(){
+        java.util.Set<BluetoothDevice> prDevices = BTAd.getBondedDevices();
+        if(prDevices.size() > 0 ){
+            for(BluetoothDevice BTDv : prDevices){
+                BTAd_Array.add(BTDv.getName() +"\n"+BTDv.getAddress());
+            }
+        }
+    }
+    private void createAlertListView(){
+        int List_Count = 0;
+        List_Count = BTAd_Array.getCount();
+
+        if(List_Count >0){
+            AlertDialog.Builder dialog_list = new AlertDialog.Builder(MainActivity.this);
+            dialog_list.setTitle("已搜索到的裝置");
+            dialog_list.setCancelable(true);
+            dialog_list.setAdapter(BTAd_Array, new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+
+                }
+            });
+            dialog_list.show();
+        }
+        else{
+          CommonTool.ToastAlert(MainActivity.this,"沒找到裝置");
+        }
 
     }
 }
