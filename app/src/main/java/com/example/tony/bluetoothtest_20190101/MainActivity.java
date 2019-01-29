@@ -22,6 +22,9 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.support.v4.content.ContextCompat;
 
+
+import java.util.ArrayList;
+
 public class MainActivity extends AppCompatActivity {
     private final static int REQUEST_ENABLE_BT = 1;
     private interface BTSearch{
@@ -37,7 +40,7 @@ public class MainActivity extends AppCompatActivity {
     private Button btn_Search;
     private BluetoothAdapter BTAd;
     private ArrayAdapter<String> BTAd_Array;
-
+    private ArrayList<String> BTMAC_Array;
     ProgressDialog progressdialog;
     Handler  BT_Handler;
 
@@ -65,7 +68,7 @@ public class MainActivity extends AppCompatActivity {
         }
         BTAd = BluetoothAdapter.getDefaultAdapter();
         BTAd_Array = new ArrayAdapter<String>(this,android.R.layout.simple_list_item_1);
-
+        BTMAC_Array = new ArrayList<String>();
 
         //set event
         BT_Handler =new Handler(){
@@ -134,8 +137,10 @@ public class MainActivity extends AppCompatActivity {
                                 3.開始計時
                                 4.註冊BroadcastReceiver
                              */
+
                             CommonTool.ToastAlert(MainActivity.this,"開始尋找");
                             BTAd_Array.clear();
+                            BTMAC_Array.clear();
                             BTAd.startDiscovery();
 
 
@@ -167,27 +172,25 @@ public class MainActivity extends AppCompatActivity {
             String action = intent.getAction();
 
             switch (action) {
-                case BluetoothDevice.ACTION_FOUND:
+                case BluetoothDevice.ACTION_FOUND://找到藍芽
                     //取得搜尋到的裝置訊息
                     BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
-                    BTAd_Array.add(device.getName() +"\n"+device.getAddress());
+                    BTArray_Setting(device);
                     break;
-                case BluetoothDevice.ACTION_BOND_STATE_CHANGED:
+                case BluetoothDevice.ACTION_BOND_STATE_CHANGED://
                     CommonTool.ToastAlert(MainActivity.this,action);
                     break;
-                case BluetoothAdapter.ACTION_DISCOVERY_STARTED:
+                case BluetoothAdapter.ACTION_DISCOVERY_STARTED://開始探索
                     CommonTool.ToastAlert(MainActivity.this,action);
                     break;
-                case BluetoothAdapter.ACTION_DISCOVERY_FINISHED:
+                case BluetoothAdapter.ACTION_DISCOVERY_FINISHED://探索結束
                     CommonTool.ToastAlert(MainActivity.this,action);
                     break;
                 default:
                     CommonTool.ToastAlert(MainActivity.this,action);
                     break;
             }
-            if(BluetoothDevice.ACTION_FOUND.equals(action)){
 
-            }
         }
     };
 
@@ -209,7 +212,7 @@ public class MainActivity extends AppCompatActivity {
         java.util.Set<BluetoothDevice> prDevices = BTAd.getBondedDevices();
         if(prDevices.size() > 0 ){
             for(BluetoothDevice BTDv : prDevices){
-                BTAd_Array.add(BTDv.getName() +"\n"+BTDv.getAddress());
+                BTArray_Setting(BTDv);
             }
         }
     }
@@ -224,7 +227,9 @@ public class MainActivity extends AppCompatActivity {
             dialog_list.setAdapter(BTAd_Array, new DialogInterface.OnClickListener() {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
+                    String MAC = BTMAC_Array.get(which);
 
+                    StartBTConnect(BTAd.getRemoteDevice(MAC));
                 }
             });
             dialog_list.show();
@@ -232,6 +237,13 @@ public class MainActivity extends AppCompatActivity {
         else{
           CommonTool.ToastAlert(MainActivity.this,"沒找到裝置");
         }
+
+    }
+    private void BTArray_Setting(BluetoothDevice BD){
+        BTAd_Array.add(BD.getName() +"\n"+BD.getAddress());
+        BTMAC_Array.add(BD.getAddress());
+    }
+    private void StartBTConnect(BluetoothDevice BD){
 
     }
 }
