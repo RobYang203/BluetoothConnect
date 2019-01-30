@@ -228,8 +228,10 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
                     String MAC = BTMAC_Array.get(which);
+                    if(MAC != null &&  "".equals(MAC) && MAC.length() !=0){
+                        StartBTConnect(BTAd.getRemoteDevice(MAC));
+                    }
 
-                    StartBTConnect(BTAd.getRemoteDevice(MAC));
                 }
             });
             dialog_list.show();
@@ -245,5 +247,12 @@ public class MainActivity extends AppCompatActivity {
     }
     private void StartBTConnect(BluetoothDevice BD){
 
+        //匿名繼承 Thread
+        new Thread(){
+
+            public void run() {
+
+            }
+        };
     }
 }
