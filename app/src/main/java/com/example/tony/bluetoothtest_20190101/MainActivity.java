@@ -1,5 +1,8 @@
 package com.example.tony.bluetoothtest_20190101;
 
+import android.os.Looper;
+import android.bluetooth.BluetoothServerSocket;
+import android.bluetooth.BluetoothSocket;
 import android.support.v4.app.ActivityCompat;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
@@ -21,7 +24,11 @@ import android.widget.EditText;
 import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.support.v4.content.ContextCompat;
+import android.widget.RadioGroup;
+import android.widget.Toast;
 
+import java.io.IOException;
+import java.util.UUID;
 
 import java.util.ArrayList;
 
@@ -32,7 +39,9 @@ public class MainActivity extends AppCompatActivity {
         public static final int FINISHEND=1;
         public static final int END = 2;
     };
+    private static final UUID BT_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private EditText ed_Msg ;
+    private RadioGroup rgMode;
     private Button btn_Send;
     private Button btn_BT_ON;
     private Button btn_BT_OFF;
@@ -60,6 +69,7 @@ public class MainActivity extends AppCompatActivity {
         btn_BT_OFF = (Button)findViewById(R.id.btn_BT_OFF);
         btn_Shw_Paired = (Button)findViewById(R.id.btn_Shw_Paired);
         btn_Search = (Button)findViewById(R.id.btn_Search);
+        rgMode = (RadioGroup)findViewById(R.id.rgBTMode);
 
         //Bluetooth
         if (ContextCompat.checkSelfPermission(MainActivity.this,
@@ -78,7 +88,7 @@ public class MainActivity extends AppCompatActivity {
                     case BTSearch.START:
                         progressdialog =ProgressDialog.show(MainActivity.this,"","Searching...",true,false);
 
-                        BT_Handler.sendEmptyMessageDelayed(BTSearch.FINISHEND,30000);
+                        BT_Handler.sendEmptyMessageDelayed(BTSearch.FINISHEND,20000);
                         break;
                     case BTSearch.FINISHEND:
                         BTAd.cancelDiscovery();
@@ -175,6 +185,7 @@ public class MainActivity extends AppCompatActivity {
                 case BluetoothDevice.ACTION_FOUND://找到藍芽
                     //取得搜尋到的裝置訊息
                     BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
+                    CommonTool.ToastAlert(MainActivity.this,"Find BT:"+device.getName());
                     BTArray_Setting(device);
                     break;
                 case BluetoothDevice.ACTION_BOND_STATE_CHANGED://
@@ -193,7 +204,16 @@ public class MainActivity extends AppCompatActivity {
 
         }
     };
+    public void callThreadToast(final String Msg){
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
 
+            @Override
+            public void run() {
+                Toast.makeText(MainActivity.this,Msg,Toast.LENGTH_SHORT).show();
+            }
+        });
+
+    }
     @Override
     protected void onActivityResult(int requestCode,int resultCode,Intent result){
             super.onActivityResult(requestCode,resultCode,result);
@@ -201,6 +221,10 @@ public class MainActivity extends AppCompatActivity {
             switch (resultCode){
                 case RESULT_OK:
                     CommonTool.ToastAlert(MainActivity.this,"BT Open Success");
+                    if(rgMode.getCheckedRadioButtonId() == R.id.rdoServer){
+                        OpenDiscoverable();
+                        StartServerSide();
+                    }
                     break;
                 case RESULT_CANCELED:
                     CommonTool.ToastAlert(MainActivity.this,"BT Open failed");
@@ -228,8 +252,8 @@ public class MainActivity extends AppCompatActivity {
                 @Override
                 public void onClick(DialogInterface dialog, int which) {
                     String MAC = BTMAC_Array.get(which);
-                    if(MAC != null &&  "".equals(MAC) && MAC.length() !=0){
-                        StartBTConnect(BTAd.getRemoteDevice(MAC));
+                    if(MAC != null &&  MAC !="" && MAC.length() !=0){
+                        StartBTConnect(MAC);
                     }
 
                 }
@@ -245,14 +269,99 @@ public class MainActivity extends AppCompatActivity {
         BTAd_Array.add(BD.getName() +"\n"+BD.getAddress());
         BTMAC_Array.add(BD.getAddress());
     }
-    private void StartBTConnect(BluetoothDevice BD){
+    //打開可被探索模式，300秒
+    private void OpenDiscoverable(){
+        Intent discoverableI = new Intent(BTAd.ACTION_REQUEST_DISCOVERABLE);
 
+        discoverableI.putExtra(BTAd.EXTRA_DISCOVERABLE_DURATION,300);
+        startActivity(discoverableI);
+    }
+    private void StartBTConnect(String sltMAC){
+        final String MAC  =sltMAC;
+        BluetoothDevice BD = BTAd.getRemoteDevice(MAC);
+        //BTAd.cancelDiscovery();
+        CommonTool.ToastAlert(MainActivity.this,"In StartBTConnect");
         //匿名繼承 Thread
-        new Thread(){
+        new BTClientThread(BD).start();
+    }
 
+    private void StartServerSide(){
+        final BluetoothServerSocket BTSS ;
+        BluetoothServerSocket tmp = null;
+        try{
+
+            tmp = BTAd.listenUsingRfcommWithServiceRecord("TestServer",BT_UUID);
+            callThreadToast("Start Waiting");
+
+        }catch (IOException ioe){
+            callThreadToast("Server listen Err");
+        }
+        BTSS =tmp;
+        new Thread(){
+            @Override
             public void run() {
+                super.run();
+                BluetoothSocket BS=null;
+                BluetoothDevice BD;
+                while(true){
+                    try{
+                        BS = BTSS.accept();
+                        callThreadToast("Waiting.....");
+                    }
+                    catch (IOException ioe){
+                        callThreadToast("accept Err");
+
+                    }
+                    if(BS != null){
+                        BD = BS.getRemoteDevice();
+                        callThreadToast("get device:"+BD.getName());
+
+                        break;
+                    }
+                }
 
             }
-        };
+        }.start();
+
+
+    }
+
+    private class BTClientThread extends Thread{
+        private BluetoothDevice BD;
+        BluetoothSocket BTS;
+        public BTClientThread(BluetoothDevice BD){
+            this.BD = BD;
+        }
+        @Override
+        public void run(){
+
+            //Create Socket
+            if(BD != null){
+                try{
+                    BTS =BD.createRfcommSocketToServiceRecord(BT_UUID);
+                    callThreadToast("Start Connect");
+                }catch (IOException ioe){
+                    callThreadToast("IO Err for get Socket");
+                }
+            }
+            //Start Connect
+            if(BTS != null){
+                try{
+                    BTS.connect();
+                    callThreadToast("Connecting....");
+                }catch (IOException ioe){
+                    callThreadToast("IO Err for  Connect");
+
+                    try{
+                        BTS.close();
+                    }
+                    catch (IOException ioe_c){
+                        callThreadToast("IO Err for  connect fail to Close");
+
+                    }
+                }
+            }
+
+        }
     }
 }
