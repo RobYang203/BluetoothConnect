@@ -3,6 +3,7 @@ package com.example.tony.bluetoothtest_20190101;
 import android.os.Looper;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
+import android.os.SystemClock;
 import android.support.v4.app.ActivityCompat;
 import android.Manifest;
 import android.bluetooth.BluetoothAdapter;
@@ -25,9 +26,13 @@ import android.app.AlertDialog;
 import android.app.ProgressDialog;
 import android.support.v4.content.ContextCompat;
 import android.widget.RadioGroup;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.util.UUID;
 
 import java.util.ArrayList;
@@ -39,7 +44,15 @@ public class MainActivity extends AppCompatActivity {
         public static final int FINISHEND=1;
         public static final int END = 2;
     };
+
+    private interface BTIO{
+        public static final int MESSAGE_READ = 3;
+        public static final int MESSAGE_WRITE=4;
+        public static final int MESSAGE_TOAST = 5;
+    };
     private static final UUID BT_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
+    private TextView read_View;
     private EditText ed_Msg ;
     private RadioGroup rgMode;
     private Button btn_Send;
@@ -63,6 +76,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void init(){
         //view
+        read_View = (TextView)findViewById(R.id.ReadView);
         ed_Msg = (EditText)findViewById(R.id.ed_Msg);
         btn_Send = (Button)findViewById(R.id.btn_Send);
         btn_BT_ON = (Button)findViewById(R.id.btn_BT_ON);
@@ -98,6 +112,16 @@ public class MainActivity extends AppCompatActivity {
                         break;
                     case BTSearch.END:
                         createAlertListView();
+                        break;
+                    case BTIO.MESSAGE_READ:
+                        String readMsg = null;
+                        try{
+                            readMsg = new String((byte[])msg.obj,"UTF-8");
+                            read_View.setText(readMsg);
+                        }catch (UnsupportedEncodingException uee){
+                            CommonTool.ToastAlert(MainActivity.this,"UnsupportedEncodingException");
+                        }
+
                         break;
                 }
 
@@ -286,18 +310,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void StartServerSide(){
-        final BluetoothServerSocket BTSS ;
         BluetoothServerSocket tmp = null;
         try{
 
             tmp = BTAd.listenUsingRfcommWithServiceRecord("TestServer",BT_UUID);
             callThreadToast("Start Waiting");
-
+            new BTServerThread(tmp).start();
         }catch (IOException ioe){
             callThreadToast("Server listen Err");
         }
-        BTSS =tmp;
-        new Thread(){
+
+
+        /*new Thread(){
             @Override
             public void run() {
                 super.run();
@@ -322,13 +346,49 @@ public class MainActivity extends AppCompatActivity {
 
             }
         }.start();
-
+        */
 
     }
+    private class BTServerThread extends Thread{
+        private BluetoothServerSocket BTSS;
 
+        Boolean connFail = false;
+        public BTServerThread(BluetoothServerSocket BTSS){
+
+            this.BTSS = BTSS;
+        }
+        @Override
+        public void run(){
+            super.run();
+            BluetoothSocket BS=null;
+            BluetoothDevice BD;
+            while(true){
+                try{
+                    BS = BTSS.accept();
+                    callThreadToast("Waiting.....");
+                }
+                catch (IOException ioe){
+                    callThreadToast("accept Err");
+                    connFail = true;
+                    break;
+                }
+                if(BS != null && !connFail){
+                    BD = BS.getRemoteDevice();
+                    callThreadToast("get device:"+BD.getName());
+
+                    break;
+                }
+            }
+            //開啟溝通管道
+            if(!connFail){
+
+            }
+        }
+    }
     private class BTClientThread extends Thread{
         private BluetoothDevice BD;
         BluetoothSocket BTS;
+        Boolean connFail = false;
         public BTClientThread(BluetoothDevice BD){
             this.BD = BD;
         }
@@ -342,6 +402,7 @@ public class MainActivity extends AppCompatActivity {
                     callThreadToast("Start Connect");
                 }catch (IOException ioe){
                     callThreadToast("IO Err for get Socket");
+                    connFail = true;
                 }
             }
             //Start Connect
@@ -351,16 +412,82 @@ public class MainActivity extends AppCompatActivity {
                     callThreadToast("Connecting....");
                 }catch (IOException ioe){
                     callThreadToast("IO Err for  Connect");
-
+                    connFail = true;
                     try{
                         BTS.close();
                     }
                     catch (IOException ioe_c){
                         callThreadToast("IO Err for  connect fail to Close");
-
+                        connFail = true;
                     }
                 }
             }
+            //開啟溝通管道
+            if(!connFail){
+
+            }
+        }
+    }
+
+    private class BTCommunication extends Thread{
+        private final BluetoothSocket BTS;
+        private final InputStream InS;
+        private final OutputStream OutS;
+        public BTCommunication(BluetoothSocket BTS){
+            InputStream tmpIn = null;
+            OutputStream tmpOut = null;
+
+            this.BTS = BTS;
+
+            try{
+                tmpIn = BTS.getInputStream();
+                tmpOut = BTS.getOutputStream();
+            }catch (IOException ioe){
+
+
+            }
+
+            InS = tmpIn;
+            OutS = tmpOut;
+
+        }
+
+        @Override
+        public void run() {
+            super.run();
+
+            byte[] buffer = new byte[1024];
+            int Len;
+
+            while(true){
+                try{
+                    //判斷已有資料進來
+                    Len = InS.available();
+
+                    if(Len != 0){
+                        //等候資料讀取
+                        SystemClock.sleep(100);
+                        //讀取目前資料長度
+                        Len = InS.available();
+
+                        Len = InS.read(buffer,0,Len);
+                        BT_Handler.obtainMessage(BTIO.MESSAGE_READ,Len,-1,buffer)
+                                    .sendToTarget();
+                    }
+
+                }catch (IOException ioe){
+
+
+                }
+
+            }
+        }
+
+        public void write(String input){
+            byte[] bytes = input.getBytes();
+            try{
+                OutS.write(bytes);
+            }catch (IOException ioe){}
 
         }
     }
