@@ -50,6 +50,7 @@ public class MainActivity extends AppCompatActivity {
         public static final int MESSAGE_WRITE=4;
         public static final int MESSAGE_TOAST = 5;
     };
+    public static final int TOAST_MESSAGE = 6;
     private static final UUID BT_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     private TextView read_View;
@@ -63,6 +64,7 @@ public class MainActivity extends AppCompatActivity {
     private BluetoothAdapter BTAd;
     private ArrayAdapter<String> BTAd_Array;
     private ArrayList<String> BTMAC_Array;
+    private BTCommunication BT_Comm;
     ProgressDialog progressdialog;
     Handler  BT_Handler;
 
@@ -123,6 +125,9 @@ public class MainActivity extends AppCompatActivity {
                         }
 
                         break;
+                    case TOAST_MESSAGE:
+                        CommonTool.ToastAlert(MainActivity.this,msg.obj.toString());
+                        break;
                 }
 
             }
@@ -148,7 +153,15 @@ public class MainActivity extends AppCompatActivity {
                 createAlertListView();
             }
         });
-
+        //按下送出紐
+        btn_Send.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(BT_Comm != null){
+                    BT_Comm.write(ed_Msg.getText().toString());
+                }
+            }
+        });
         //按下搜尋鈕
         btn_Search.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -314,10 +327,13 @@ public class MainActivity extends AppCompatActivity {
         try{
 
             tmp = BTAd.listenUsingRfcommWithServiceRecord("TestServer",BT_UUID);
-            callThreadToast("Start Waiting");
+            //callThreadToast("Start Waiting");
+            BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Waiting").sendToTarget();
             new BTServerThread(tmp).start();
         }catch (IOException ioe){
-            callThreadToast("Server listen Err");
+            //callThreadToast("Server listen Err");
+            BT_Handler.obtainMessage(TOAST_MESSAGE,"Server listen Err")
+            .sendToTarget();
         }
 
 
@@ -360,28 +376,32 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run(){
             super.run();
-            BluetoothSocket BS=null;
+            BluetoothSocket BTS=null;
             BluetoothDevice BD;
             while(true){
                 try{
-                    BS = BTSS.accept();
-                    callThreadToast("Waiting.....");
+                    BTS = BTSS.accept();
+                    //callThreadToast("Waiting.....");
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"Waiting.....").sendToTarget();
                 }
                 catch (IOException ioe){
-                    callThreadToast("accept Err");
+                    //callThreadToast("accept Err");
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"accept Err").sendToTarget();
                     connFail = true;
                     break;
                 }
-                if(BS != null && !connFail){
-                    BD = BS.getRemoteDevice();
-                    callThreadToast("get device:"+BD.getName());
-
+                if(BTS != null && !connFail){
+                    BD = BTS.getRemoteDevice();
+                   // callThreadToast("get device:"+BD.getName());
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"get device:"+BD.getName()).sendToTarget();
                     break;
                 }
             }
             //開啟溝通管道
             if(!connFail){
-
+                BT_Comm = new BTCommunication(BTS);
+                BT_Comm.start();
+                BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Communication").sendToTarget();
             }
         }
     }
@@ -399,9 +419,11 @@ public class MainActivity extends AppCompatActivity {
             if(BD != null){
                 try{
                     BTS =BD.createRfcommSocketToServiceRecord(BT_UUID);
-                    callThreadToast("Start Connect");
+                   // callThreadToast("Start Connect");
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Connect").sendToTarget();
                 }catch (IOException ioe){
-                    callThreadToast("IO Err for get Socket");
+                   // callThreadToast("IO Err for get Socket");
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for get Socket").sendToTarget();
                     connFail = true;
                 }
             }
@@ -409,22 +431,27 @@ public class MainActivity extends AppCompatActivity {
             if(BTS != null){
                 try{
                     BTS.connect();
-                    callThreadToast("Connecting....");
+                    //callThreadToast("Connecting....");
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"Connecting....").sendToTarget();
                 }catch (IOException ioe){
-                    callThreadToast("IO Err for  Connect");
+                    //callThreadToast("IO Err for  Connect");
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for  Connect").sendToTarget();
                     connFail = true;
                     try{
                         BTS.close();
                     }
                     catch (IOException ioe_c){
-                        callThreadToast("IO Err for  connect fail to Close");
+                       // callThreadToast("IO Err for  connect fail to Close");
+                        BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for  connect fail to Close").sendToTarget();
                         connFail = true;
                     }
                 }
             }
             //開啟溝通管道
             if(!connFail){
-
+                BT_Comm = new BTCommunication(BTS);
+                BT_Comm.start();
+                BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Communication").sendToTarget();
             }
         }
     }
@@ -444,7 +471,7 @@ public class MainActivity extends AppCompatActivity {
                 tmpOut = BTS.getOutputStream();
             }catch (IOException ioe){
 
-
+                BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for  IOStream").sendToTarget();
             }
 
             InS = tmpIn;
@@ -477,7 +504,7 @@ public class MainActivity extends AppCompatActivity {
 
                 }catch (IOException ioe){
 
-
+                    BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for Read Data").sendToTarget();
                 }
 
             }
@@ -487,7 +514,9 @@ public class MainActivity extends AppCompatActivity {
             byte[] bytes = input.getBytes();
             try{
                 OutS.write(bytes);
-            }catch (IOException ioe){}
+            }catch (IOException ioe){
+                BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for Write Data").sendToTarget();
+            }
 
         }
     }
