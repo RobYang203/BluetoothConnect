@@ -1,5 +1,6 @@
 package com.example.tony.bluetoothtest_20190101;
 
+import com.example.tony.bluetoothtest_20190101.BluetoothTool;
 import android.os.Looper;
 import android.bluetooth.BluetoothServerSocket;
 import android.bluetooth.BluetoothSocket;
@@ -45,17 +46,13 @@ public class MainActivity extends AppCompatActivity {
         public static final int END = 2;
     };
 
-    private interface BTIO{
-        public static final int MESSAGE_READ = 3;
-        public static final int MESSAGE_WRITE=4;
-        public static final int MESSAGE_TOAST = 5;
-    };
-    public static final int TOAST_MESSAGE = 6;
+
+    public static final int TOAST_MESSAGE = 5;
     private static final UUID BT_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
     private TextView read_View;
     private EditText ed_Msg ;
-    private RadioGroup rgMode;
+    //private RadioGroup rgMode;
     private Button btn_Send;
     private Button btn_BT_ON;
     private Button btn_BT_OFF;
@@ -67,7 +64,6 @@ public class MainActivity extends AppCompatActivity {
     private BTCommunication BT_Comm;
     ProgressDialog progressdialog;
     Handler  BT_Handler;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,8 +81,8 @@ public class MainActivity extends AppCompatActivity {
         btn_BT_OFF = (Button)findViewById(R.id.btn_BT_OFF);
         btn_Shw_Paired = (Button)findViewById(R.id.btn_Shw_Paired);
         btn_Search = (Button)findViewById(R.id.btn_Search);
-        rgMode = (RadioGroup)findViewById(R.id.rgBTMode);
 
+       // rgMode = (RadioGroup)findViewById(R.id.rgBTMode);
         //Bluetooth
         if (ContextCompat.checkSelfPermission(MainActivity.this,
                                             Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
@@ -116,9 +112,32 @@ public class MainActivity extends AppCompatActivity {
                         createAlertListView();
                         break;
                     case BTIO.MESSAGE_READ:
-                        String readMsg = null;
+                        String tmpStr = null;
+                        String readMsg = "";
+                        String HeadStr = "HKME";
+                        String[] msgArr;
+                        byte[] msgBArr;
+                        String subMsg="";
+                        short tmpBit;
                         try{
-                            readMsg = new String((byte[])msg.obj,"UTF-8");
+                            read_View.setText("");
+                            readMsg="";
+                            tmpStr = new String((byte[])msg.obj,"UTF-8");
+                            msgArr = tmpStr.split(HeadStr);
+                            /*for(int i =1; i < msgArr.length; i++){
+                                readMsg += HeadStr +":"+ msgArr[i]+"\n";
+                            }*/
+                            msgBArr = msgArr[1].getBytes();
+                            for(int i =0; i < msgBArr.length; i++){
+                                tmpBit =  msgBArr[i];
+                                tmpBit &= 0xff;
+                                subMsg +="("+ Integer.toHexString(tmpBit) +")";
+                                if(i != msgBArr.length-1){
+                                    subMsg +="-";
+                                }
+                                //readMsg += HeadStr +":"+ msgArr[i]+"\n";
+                            }
+                            readMsg += msgArr[1].length()+":"+ HeadStr +":"+  subMsg+"\n";
                             read_View.setText(readMsg);
                         }catch (UnsupportedEncodingException uee){
                             CommonTool.ToastAlert(MainActivity.this,"UnsupportedEncodingException");
@@ -258,10 +277,10 @@ public class MainActivity extends AppCompatActivity {
             switch (resultCode){
                 case RESULT_OK:
                     CommonTool.ToastAlert(MainActivity.this,"BT Open Success");
-                    if(rgMode.getCheckedRadioButtonId() == R.id.rdoServer){
+                    /*if(rgMode.getCheckedRadioButtonId() == R.id.rdoServer){
                         OpenDiscoverable();
                         StartServerSide();
-                    }
+                    }*/
                     break;
                 case RESULT_CANCELED:
                     CommonTool.ToastAlert(MainActivity.this,"BT Open failed");
@@ -319,205 +338,17 @@ public class MainActivity extends AppCompatActivity {
         //BTAd.cancelDiscovery();
         CommonTool.ToastAlert(MainActivity.this,"In StartBTConnect");
         //匿名繼承 Thread
-        new BTClientThread(BD).start();
-    }
-
-    private void StartServerSide(){
-        BluetoothServerSocket tmp = null;
-        try{
-
-            tmp = BTAd.listenUsingRfcommWithServiceRecord("TestServer",BT_UUID);
-            //callThreadToast("Start Waiting");
-            BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Waiting").sendToTarget();
-            new BTServerThread(tmp).start();
-        }catch (IOException ioe){
-            //callThreadToast("Server listen Err");
-            BT_Handler.obtainMessage(TOAST_MESSAGE,"Server listen Err")
-            .sendToTarget();
-        }
-
-
-        /*new Thread(){
+        BluetoothTool BTool = new BluetoothTool(MainActivity.this,BD);
+        BTool.SetMsgListener(new OnBTListener() {
             @Override
-            public void run() {
-                super.run();
-                BluetoothSocket BS=null;
-                BluetoothDevice BD;
-                while(true){
-                    try{
-                        BS = BTSS.accept();
-                        callThreadToast("Waiting.....");
-                    }
-                    catch (IOException ioe){
-                        callThreadToast("accept Err");
-
-                    }
-                    if(BS != null){
-                        BD = BS.getRemoteDevice();
-                        callThreadToast("get device:"+BD.getName());
-
-                        break;
-                    }
-                }
-
+            public void ListenMsg(int MsgMode, Object o) {
+                BT_Handler.obtainMessage(MsgMode,o).sendToTarget();
             }
-        }.start();
-        */
-
-    }
-    private class BTServerThread extends Thread{
-        private BluetoothServerSocket BTSS;
-
-        Boolean connFail = false;
-        public BTServerThread(BluetoothServerSocket BTSS){
-
-            this.BTSS = BTSS;
-        }
-        @Override
-        public void run(){
-            super.run();
-            BluetoothSocket BTS=null;
-            BluetoothDevice BD;
-            while(true){
-                try{
-                    BTS = BTSS.accept();
-                    //callThreadToast("Waiting.....");
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"Waiting.....").sendToTarget();
-                }
-                catch (IOException ioe){
-                    //callThreadToast("accept Err");
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"accept Err").sendToTarget();
-                    connFail = true;
-                    break;
-                }
-                if(BTS != null && !connFail){
-                    BD = BTS.getRemoteDevice();
-                   // callThreadToast("get device:"+BD.getName());
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"get device:"+BD.getName()).sendToTarget();
-                    break;
-                }
-            }
-            //開啟溝通管道
-            if(!connFail){
-                BT_Comm = new BTCommunication(BTS);
-                BT_Comm.start();
-                BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Communication").sendToTarget();
-            }
-        }
-    }
-    private class BTClientThread extends Thread{
-        private BluetoothDevice BD;
-        BluetoothSocket BTS;
-        Boolean connFail = false;
-        public BTClientThread(BluetoothDevice BD){
-            this.BD = BD;
-        }
-        @Override
-        public void run(){
-
-            //Create Socket
-            if(BD != null){
-                try{
-                    BTS =BD.createRfcommSocketToServiceRecord(BT_UUID);
-                   // callThreadToast("Start Connect");
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Connect").sendToTarget();
-                }catch (IOException ioe){
-                   // callThreadToast("IO Err for get Socket");
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for get Socket").sendToTarget();
-                    connFail = true;
-                }
-            }
-            //Start Connect
-            if(BTS != null){
-                try{
-                    BTS.connect();
-                    //callThreadToast("Connecting....");
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"Connecting....").sendToTarget();
-                }catch (IOException ioe){
-                    //callThreadToast("IO Err for  Connect");
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for  Connect").sendToTarget();
-                    connFail = true;
-                    try{
-                        BTS.close();
-                    }
-                    catch (IOException ioe_c){
-                       // callThreadToast("IO Err for  connect fail to Close");
-                        BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for  connect fail to Close").sendToTarget();
-                        connFail = true;
-                    }
-                }
-            }
-            //開啟溝通管道
-            if(!connFail){
-                BT_Comm = new BTCommunication(BTS);
-                BT_Comm.start();
-                BT_Handler.obtainMessage(TOAST_MESSAGE,"Start Communication").sendToTarget();
-            }
-        }
+        });
+        BTool.StartConnect();
+       // new BTClientThread(BD).start();
     }
 
-    private class BTCommunication extends Thread{
-        private final BluetoothSocket BTS;
-        private final InputStream InS;
-        private final OutputStream OutS;
-        public BTCommunication(BluetoothSocket BTS){
-            InputStream tmpIn = null;
-            OutputStream tmpOut = null;
 
-            this.BTS = BTS;
-
-            try{
-                tmpIn = BTS.getInputStream();
-                tmpOut = BTS.getOutputStream();
-            }catch (IOException ioe){
-
-                BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for  IOStream").sendToTarget();
-            }
-
-            InS = tmpIn;
-            OutS = tmpOut;
-
-        }
-
-        @Override
-        public void run() {
-            super.run();
-
-            byte[] buffer = new byte[1024];
-            int Len;
-
-            while(true){
-                try{
-                    //判斷已有資料進來
-                    Len = InS.available();
-
-                    if(Len != 0){
-                        //等候資料讀取
-                        SystemClock.sleep(100);
-                        //讀取目前資料長度
-                        Len = InS.available();
-
-                        Len = InS.read(buffer,0,Len);
-                        BT_Handler.obtainMessage(BTIO.MESSAGE_READ,Len,-1,buffer)
-                                    .sendToTarget();
-                    }
-
-                }catch (IOException ioe){
-
-                    BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for Read Data").sendToTarget();
-                }
-
-            }
-        }
-
-        public void write(String input){
-            byte[] bytes = input.getBytes();
-            try{
-                OutS.write(bytes);
-            }catch (IOException ioe){
-                BT_Handler.obtainMessage(TOAST_MESSAGE,"IO Err for Write Data").sendToTarget();
-            }
-
-        }
-    }
 }
+
